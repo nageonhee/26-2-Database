@@ -19,6 +19,19 @@
 
 주요 테이블: `sido`, `sigungu`, `institution`, `institution_type`, `ownership_type`, `dept`, `institution_dept`, `equipment_type`, `institution_equip`, `program`, `institution_program`, `business_hours`, `disease3`, `disease`, `disease_name`, `dept_disease_stat`
 
+## 조회 기능
+
+| # | 기능 | 내용 |
+|---|---|---|
+| ① | 의료기관 검색 | 기관명·종별·설립구분·지역으로 기관 찾기 |
+| ② | 진료과목별 기관 | 진료과목을 고르면 해당 기관을 전문의 수 순으로 보여줌 |
+| ③ | 지역별 기관 수 | 시도/시군구·종별·개설 연도별 기관 수 집계 |
+| ④ | 질병으로 진료과 찾기 | 질병명·상병코드 → 환자 수 상위 진료과 → 지역 기관 수 |
+| ⑤ | 의료장비 보유 기관 | 장비 종류·최소 대수로 기관 찾기 |
+| ⑥ | 요일·시각별 진료 | 요일·시각·진료과목으로 진료 중인 기관 찾기 |
+| ⑦ | 지정·시범사업 참여 | 특수진료·시범사업 참여 기관 찾기 |
+| ⑧ | 진료과목 다양성 순위 | 진료과목 수·전문의 합계가 많은 기관 순위 |
+
 ## 진행해야 할 일
 
 ### [다 같이] 질병 안내에서 뺄 진료과목 정하기
