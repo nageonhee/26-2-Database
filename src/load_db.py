@@ -35,7 +35,14 @@ def csv_rows(pattern):
     if isinstance(pattern, int):
         pattern = f"{pattern}.*.csv"
     path, = (PROJECT / "DB").glob(pattern)
-    with path.open(encoding="cp949", newline="") as file:
+    encoding = "utf-8-sig"
+    try:
+        with path.open(encoding=encoding) as file:
+            while file.read(65536):
+                pass
+    except UnicodeDecodeError:
+        encoding = "cp949"
+    with path.open(encoding=encoding, newline="") as file:
         yield from csv.DictReader(file)
 
 
@@ -103,7 +110,7 @@ def opened_on(value):
 def clock(value):
     # 진료시간의 시·분·초 형식 변환
     value = value.strip()
-    if not re.fullmatch(r"[0-9]{1,4}", value):
+    if not re.fullmatch(r"[0-9]{3,4}", value):
         return None
     hour, minute = divmod(int(value), 100)
     if hour < 24 and minute < 60 or (hour, minute) == (24, 0):
@@ -121,13 +128,13 @@ def load_institutions(db):
     for number in (1, 2):
         for row in csv_rows(number):
             key = row["암호화요양기호"]
-            base[key] = (
-                row["병원홈페이지"] or None if number == 1 else None,
-                coordinate(row["좌표(X)"], 120, 135),
-                coordinate(row["좌표(Y)"], 30, 40),
-            )
+            base[key] = row
 
-    facilities = list(csv_rows(3))
+    facilities = []
+    for facility in csv_rows(3):
+        row = base[facility["암호화요양기호"]]
+        row.update({field: facility[field] for field in ("설립구분코드", "설립구분코드명")})
+        facilities.append(row)
     sido_names = defaultdict(Counter)
     districts, types, ownership = {}, {}, {}
     for row in facilities:
@@ -145,13 +152,15 @@ def load_institutions(db):
     for inst_id, row in enumerate(facilities, 1):
         key = row["암호화요양기호"]
         identifiers[key] = inst_id
-        homepage, longitude, latitude = base[key]
         zip_code = row["우편번호"].strip()
+        zip_code = zip_code if re.fullmatch(r"[0-9]{5}", zip_code) and zip_code != "00000" else None
+        longitude = coordinate(row["좌표(X)"], 120, 135)
+        latitude = coordinate(row["좌표(Y)"], 30, 40)
         institutions.append((
             inst_id, key, row["요양기관명"], row["종별코드"], row["설립구분코드"],
-            row["시군구코드"], row["읍면동"] or None, zip_code if zip_code and zip_code != "00000" else None,
+            row["시군구코드"], row["읍면동"] or None, zip_code,
             row["주소"], row["전화번호"] or None, opened_on(row["개설일자"]),
-            longitude, latitude, homepage,
+            longitude, latitude, row.get("병원홈페이지") or None,
         ))
     insert(db, "institution", institutions)
     return identifiers
@@ -196,19 +205,22 @@ def load_hours(db, ids):
 def load_diseases(db, departments):
     # 상병마스터 및 진료과별 환자 통계 적재
     # 세부 상병코드 앞 3자리로 통계와 연결하고 중복 상병명 제거
-    groups, names, codes, titles = {}, {}, {}, {}
+    groups, names, codes = {}, {}, {}
+    entries = []
     for row in csv_rows("*상병마스터*.csv"):
         code = row["상병기호"].strip().upper()
         group = code[:3]
         if not re.fullmatch(r"[A-Z][0-9]{2}", group):
             continue
         name = row["한글명"].strip()
-        groups.setdefault(group, name)
         if group == code:
-            titles.setdefault(group, name)
+            groups.setdefault(group, name)
+        entries.append((code, group, name, row["영문명"].strip() or None))
+    for code, group, name, english in entries:
+        if group not in groups:
+            continue
         codes[code] = group
-        names.setdefault((code, name), row["영문명"].strip() or None)
-    groups.update(titles)
+        names.setdefault((code, name), english)
     insert(db, "disease3", groups.items())
     insert(db, "disease", codes.items())
     insert(db, "disease_name", ((code, name, english) for (code, name), english in names.items()))

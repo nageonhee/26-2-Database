@@ -6,7 +6,9 @@
 
 import os
 import sqlite3
+from collections import defaultdict
 from datetime import timedelta
+from itertools import islice
 
 from flask import Flask, abort, g, render_template, request
 
@@ -22,21 +24,21 @@ AREA = [*REGION, "type"]
 
 VIEWS = {
     "institutions": ("의료기관 검색", ["name", "type", "ownership", *REGION],
-                     ["기관명", "종별", "설립구분", "시도", "시군구", "주소", "전화번호", "개설일"]),
-    "departments": ("진료과목별 기관", ["dept", *AREA, "specialists"],
-                    ["기관명", "종별", "시도", "시군구", "진료과목", "전문의 수", "주소", "전화번호"]),
-    "regions": ("지역별 기관 수", ["group", "sido", "type", "year_from", "year_to"],
-                ["시도", "시군구", "종별", "기관 수"]),
-    "diseases": ("질병으로 진료과 찾기", ["disease", "top", *REGION],
+                     ["기관명", "종별", "설립구분", "주소", "전화번호"]),
+    "departments": ("진료과목별 기관", ["dept", *AREA, "dept_equipment", "dept_weekday", "time"],
+                    ["기관명", "진료과목", "전문의 수", "주소"]),
+    "regions": ("시도별 의료기관 수 집계", ["type"],
+                ["시도", "기관 수", "비율", "순위"]),
+    "diseases": ("질병으로 진료과 찾기", ["disease", "sido"],
                  ["상병코드", "상병명", "진료과목", "순위", "환자 수", "비율", "지역 기관 수", "기관 목록"]),
-    "equipment": ("의료장비 보유 기관", ["equipment", *AREA, "quantity"],
-                  ["기관명", "종별", "시도", "시군구", "장비", "대수", "주소"]),
-    "hours": ("요일·시각별 진료", ["weekday", "dept", "time", *AREA],
-              ["기관명", "종별", "시군구", "진료과목", "시작", "종료", "주소", "전화번호"]),
-    "programs": ("지정·시범사업 참여", ["program", *AREA],
-                 ["기관명", "종별", "시도", "시군구", "사업", "주소", "전화번호"]),
-    "rankings": ("진료과목 다양성 순위", ["minimum", "type", "sido"],
-                 ["기관명", "종별", "시도", "시군구", "진료과목 수", "전문의 합계", "주소"]),
+    "equipment": ("의료장비 보유 기관", ["equipment", "sido", "type", "quantity"],
+                  ["기관명", "장비명", "보유 대수"]),
+    "hours": ("요일·시각별 진료", ["weekday", "time", "sido", "dept"],
+              ["기관명", "진료 시작", "진료 종료"]),
+    "programs": ("지정·시범사업 참여", ["program", "sido"],
+                 ["기관명", "참여 사업", "주소"]),
+    "rankings": ("진료과목 다양성 순위", ["sido", "type", "top_n"],
+                 ["기관명", "진료과목 수", "순위"]),
 }
 
 # 라벨, 입력 유형, 필수 여부, 기본값, 최솟값, 최댓값
@@ -47,22 +49,16 @@ FIELDS = {
     "sido": ("시도", "select", False, "", None, None),
     "district": ("시군구", "select", False, "", None, None),
     "dept": ("진료과목", "select", True, "", None, None),
-    "specialists": ("최소 전문의 수", "number", False, "", 0, 9999),
-    "group": ("집계 단위", "select", False, "sido", None, None),
-    "year_from": ("개설 연도 시작", "number", False, "", 1900, 9999),
-    "year_to": ("개설 연도 종료", "number", False, "", 1900, 9999),
+    "dept_equipment": ("보유 장비", "select", False, "", None, None),
+    "dept_weekday": ("요일", "select", False, "", None, None),
     "disease": ("질병명 또는 상병코드", "text", True, "", None, None),
-    "top": ("상위 진료과 수", "number", False, "5", 1, 50),
     "equipment": ("장비", "select", True, "", None, None),
     "quantity": ("최소 대수", "number", False, "", 1, 9999),
     "weekday": ("요일", "select", True, "", None, None),
     "time": ("시각", "time", False, "", None, None),
     "program": ("지정·시범사업", "select", True, "", None, None),
-    "minimum": ("최소 진료과목 수", "number", False, "1", 1, 99),
+    "top_n": ("상위 기관 수", "number", False, "10", 1, 9999),
 }
-
-BASE = "i.inst_nm, i.type_nm, i.sido_nm, i.sigungu_nm"
-CONTACT = "i.address, i.phone"
 
 OPTION_SQL = {
     "type": "SELECT type_nm AS value, type_nm AS label FROM institution_type ORDER BY label",
@@ -105,8 +101,11 @@ def close_db(_error):
 def options_for(fields):
     # 조회 화면의 선택 목록 구성
     options = {field: query(OPTION_SQL[field]) for field in fields if field in OPTION_SQL}
-    options["group"] = [{"value": "sido", "label": "시도별"}, {"value": "district", "label": "시군구별"}]
-    options["weekday"] = [{"value": str(i), "label": label} for i, label in enumerate(WEEKDAYS, 1)]
+    if "dept_equipment" in fields:
+        options["dept_equipment"] = query(OPTION_SQL["equipment"])
+    for field in ("weekday", "dept_weekday"):
+        if field in fields:
+            options[field] = [{"value": str(i), "label": label} for i, label in enumerate(WEEKDAYS, 1)]
     return options
 
 
@@ -130,101 +129,132 @@ def institution_query(view, values):
     filters = region_filters(values)
     source = " FROM v_institution i"
     order = "i.inst_nm, i.inst_id"
-    group = ""
-    columns = f"{BASE}, {CONTACT}"
+
+    if view == "regions":
+        condition, params = where(filters)
+        return f"""
+            SELECT i.sido_nm, COUNT(*) AS total
+            FROM v_institution i{condition}
+            GROUP BY i.sido_nm ORDER BY total DESC, i.sido_nm
+        """, params
+
+    if view == "rankings":
+        condition, params = where(filters)
+        return f"""
+            SELECT i.inst_nm, COUNT(*) AS dept_count
+            FROM v_institution i JOIN institution_dept j ON j.inst_id = i.inst_id
+            {condition} GROUP BY i.inst_id, i.inst_nm
+            ORDER BY dept_count DESC, i.inst_nm, i.inst_id
+        """, params
 
     if view == "institutions":
-        columns = f"i.inst_nm, i.type_nm, i.ownership_nm, i.sido_nm, i.sigungu_nm, {CONTACT}, i.opened_on"
+        columns = "i.inst_nm, i.type_nm, i.ownership_nm, i.address, i.phone"
         if values["name"]:
-            filters.append(("INSTR(LOWER(i.inst_nm), LOWER(?)) > 0", values["name"]))
+            filters.append(("LOWER(i.inst_nm) LIKE LOWER(?) ESCAPE '!'", f"%{escape_like(values['name'])}%"))
         if values["ownership"]:
             filters.append(("i.ownership_nm = ?", values["ownership"]))
-    elif view in {"departments", "hours", "rankings"}:
+    elif view in {"departments", "hours"}:
         source += " JOIN institution_dept j ON j.inst_id = i.inst_id"
-        if view == "rankings":
-            columns = f"{BASE}, COUNT(*) AS dept_count, SUM(j.specialist_cnt) AS specialists, i.address"
-            group = f" GROUP BY i.inst_id, {BASE}, i.address HAVING COUNT(*) >= ?"
-            order = f"dept_count DESC, specialists DESC, {order}"
-        else:
+        filters.append(("j.dept_cd = ?", values["dept"]))
+        if view == "departments":
             source += " JOIN dept d ON d.dept_cd = j.dept_cd"
-            filters.append(("j.dept_cd = ?", values["dept"]))
-            if view == "departments":
-                columns = f"{BASE}, d.dept_nm, j.specialist_cnt, {CONTACT}"
-                order = f"j.specialist_cnt DESC, {order}"
-                if values["specialists"]:
-                    filters.append(("j.specialist_cnt >= ?", int(values["specialists"])))
-            else:
-                source += " JOIN business_hours h ON h.inst_id = i.inst_id"
-                columns = f"i.inst_nm, i.type_nm, i.sigungu_nm, d.dept_nm, h.open_time, h.close_time, {CONTACT}"
-                filters.append(("h.weekday = ?", int(values["weekday"])))
-                if values["time"]:
-                    time = values["time"] + ":00"
-                    filters += [("h.open_time <= ?", time), ("h.close_time > ?", time)]
-    elif view == "regions":
-        district = values["group"] == "district"
-        columns = f"i.sido_nm, {'i.sigungu_nm' if district else 'NULL AS sigungu_nm'}, i.type_nm, COUNT(*) AS total"
-        group = " GROUP BY i.sido_nm, i.type_nm" + (", i.sigungu_nm, i.sigungu_cd" if district else "")
-        order = "total DESC, i.sido_nm, sigungu_nm, i.type_nm"
-        if values["year_from"]:
-            filters.append(("i.opened_on >= ?", values["year_from"].zfill(4) + "-01-01"))
-        if values["year_to"]:
-            filters.append(("i.opened_on <= ?", values["year_to"].zfill(4) + "-12-31"))
+            columns = "i.inst_nm, d.dept_nm, j.specialist_cnt, i.address"
+            order = f"j.specialist_cnt DESC, {order}"
+            if values["dept_equipment"]:
+                filters.append((
+                    "EXISTS (SELECT 1 FROM institution_equip e WHERE e.inst_id = i.inst_id AND e.equip_cd = ? AND e.qty > 0)",
+                    values["dept_equipment"],
+                ))
+            weekday = values["dept_weekday"]
+        else:
+            columns = "i.inst_nm, h.open_time, h.close_time"
+            weekday = values["weekday"]
+        if weekday:
+            source += " JOIN business_hours h ON h.inst_id = i.inst_id"
+            filters.append(("h.weekday = ?", int(weekday)))
+            if values["time"]:
+                time = values["time"] + ":00"
+                filters += [("h.open_time <= ?", time), ("h.close_time > ?", time)]
     elif view == "equipment":
         source += " JOIN institution_equip j ON j.inst_id = i.inst_id JOIN equipment_type e ON e.equip_cd = j.equip_cd"
-        columns = f"{BASE}, e.equip_nm, j.qty, i.address"
+        columns = "i.inst_nm, e.equip_nm, j.qty"
         filters += [("j.equip_cd = ?", values["equipment"]), ("j.qty >= ?", int(values["quantity"] or 1))]
         order = f"j.qty DESC, {order}"
     elif view == "programs":
         source += " JOIN institution_program j ON j.inst_id = i.inst_id JOIN program p ON p.program_cd = j.program_cd"
-        columns = f"{BASE}, p.program_nm, {CONTACT}"
+        columns = "i.inst_nm, p.program_nm, i.address"
         filters.append(("j.program_cd = ?", values["program"]))
 
     condition, params = where(filters)
-    if view == "rankings":
-        params.append(int(values["minimum"]))
-    return f"SELECT {columns}{source}{condition}{group} ORDER BY {order}", params
+    return f"SELECT {columns}{source}{condition} ORDER BY {order}", params
 
 
-def disease_query(values):
-    # 질병명 포함 검색과 진료과 순위·지역별 기관 수 조회
-    # 상병명은 세부 코드로 표시하고 진료과 순위는 앞 3자리 통계로 계산
-    # 지역 조건은 진료과별 기관 수 집계에만 적용
+def escape_like(value):
+    # 입력에 포함된 SQL 패턴 문자를 일반 문자로 검색
+    return value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
+def disease_matches(term):
+    # 질병명 포함 검색 후, 일치한 이름이 없으면 상병코드 검색
+    matches = query("""
+        SELECT d.dis3_cd, d.dis_cd, n.dis_nm
+        FROM disease d JOIN disease_name n ON n.dis_cd = d.dis_cd
+        WHERE LOWER(n.dis_nm) LIKE LOWER(?) ESCAPE '!'
+        ORDER BY d.dis3_cd, d.dis_cd, n.dis_nm
+    """, [f"%{escape_like(term)}%"])
+    if matches:
+        return matches
+    code = term.upper().replace(".", "")
+    if not code:
+        return []
+    return query("""
+        SELECT DISTINCT b.dis3_cd, b.dis3_cd AS dis_cd, b.dis3_nm AS dis_nm
+        FROM disease3 b JOIN disease d ON d.dis3_cd = b.dis3_cd
+        WHERE d.dis_cd LIKE ? ESCAPE '!' ORDER BY b.dis3_cd
+    """, [f"{escape_like(code)}%"])
+
+
+def disease_results(values):
+    # 이름은 세부 코드로 표시하고 진료과 순위는 앞 3자리 통계로 계산
+    matches = disease_matches(values["disease"])
+    if not matches:
+        return
+    groups = sorted({row["dis3_cd"] for row in matches})
+    placeholders = ", ".join("?" for _ in groups)
+    stats = query(f"""
+        SELECT s.dis3_cd, d.dept_cd, d.dept_nm, d.is_guide, s.patient_cnt
+        FROM dept_disease_stat s JOIN dept d ON d.dept_cd = s.dept_cd
+        WHERE s.dis3_cd IN ({placeholders})
+        ORDER BY s.dis3_cd, s.patient_cnt DESC, d.dept_cd
+    """, groups)
+
+    # 비율의 분모는 전체 과목의 환자 수, 표시 대상은 안내 과목 상위 5개
+    totals = defaultdict(int)
+    guides = defaultdict(list)
+    for row in stats:
+        group = row["dis3_cd"]
+        totals[group] += row["patient_cnt"]
+        if row["is_guide"] and len(guides[group]) < 5:
+            guides[group].append(row)
+
     condition, params = where(region_filters(values))
-    search = values["disease"]
-    code = search.upper().replace(".", "")
-    return f"""
-        WITH name_matches AS (
-            SELECT DISTINCT d.dis3_cd, d.dis_cd, n.dis_nm
-            FROM disease d JOIN disease_name n ON n.dis_cd = d.dis_cd
-            WHERE INSTR(LOWER(n.dis_nm), LOWER(?)) > 0
-        ), matches AS (
-            SELECT dis3_cd, dis_cd, dis_nm FROM name_matches
-            UNION ALL
-            SELECT b.dis3_cd, b.dis3_cd, b.dis3_nm
-            FROM disease3 b
-            WHERE NOT EXISTS (SELECT 1 FROM name_matches)
-              AND EXISTS (SELECT 1 FROM disease d WHERE d.dis3_cd = b.dis3_cd AND INSTR(d.dis_cd, ?) = 1)
-        ), matched AS (
-            SELECT DISTINCT dis3_cd FROM matches
-        ), ranked AS (
-            SELECT s.dis3_cd, d.dept_cd, d.dept_nm, d.is_guide, s.patient_cnt,
-                   ROUND(100.0 * s.patient_cnt / NULLIF(SUM(s.patient_cnt) OVER (PARTITION BY s.dis3_cd), 0), 1) AS share
-            FROM dept_disease_stat s JOIN dept d ON d.dept_cd = s.dept_cd
-            JOIN matched m ON m.dis3_cd = s.dis3_cd
-        ), guide AS (
-            SELECT ranked.*,
-                   ROW_NUMBER() OVER (PARTITION BY dis3_cd ORDER BY patient_cnt DESC, dept_cd) AS rank_no
-            FROM ranked WHERE is_guide = 1
-        ), local_counts AS (
-            SELECT j.dept_cd, COUNT(*) AS total FROM institution_dept j
-            JOIN v_institution i ON i.inst_id = j.inst_id{condition} GROUP BY j.dept_cd
-        )
-        SELECT m.dis_cd, m.dis_nm, r.dept_nm, r.rank_no, r.patient_cnt, r.share,
-               CASE WHEN r.dept_cd IS NOT NULL THEN COALESCE(c.total, 0) END AS local_count, r.dept_cd
-        FROM matches m LEFT JOIN guide r ON r.dis3_cd = m.dis3_cd AND r.rank_no <= ?
-        LEFT JOIN local_counts c ON c.dept_cd = r.dept_cd
-        ORDER BY CASE WHEN m.dis3_cd = ? THEN 0 ELSE 1 END, m.dis3_cd, m.dis_cd, m.dis_nm, r.rank_no
-    """, [search, code or search, *params, int(values["top"]), code[:3]]
+    local_counts = {row["dept_cd"]: row["total"] for row in query(f"""
+        SELECT j.dept_cd, COUNT(*) AS total
+        FROM institution_dept j JOIN v_institution i ON i.inst_id = j.inst_id
+        {condition} GROUP BY j.dept_cd
+    """, params)}
+
+    for match in matches:
+        group = match["dis3_cd"]
+        for rank, row in enumerate(guides[group] or [{}], 1):
+            patients = row.get("patient_cnt")
+            dept = row.get("dept_cd")
+            yield {
+                "dis_cd": match["dis_cd"], "dis_nm": match["dis_nm"], "dept_nm": row.get("dept_nm"),
+                "rank_no": rank if dept else None, "patient_cnt": patients,
+                "share": 100 * patients / totals[group] if patients is not None and totals[group] else None,
+                "local_count": local_counts.get(dept, 0) if dept else None, "dept_cd": dept,
+            }
 
 
 # ---------------------------------------------------------------------
@@ -248,8 +278,8 @@ def validate(fields, values, options):
                                not (value[:2].isdigit() and value[3:].isdigit()) or
                                not (value.isascii() and int(value[:2]) < 24 and int(value[3:]) < 60)):
             return "시각을 올바르게 입력해 주세요."
-    if values.get("year_from") and values.get("year_to") and int(values["year_from"]) > int(values["year_to"]):
-        return "개설 연도 끝은 시작 연도와 같거나 이후여야 합니다."
+    if "dept_weekday" in values and values["time"] and not values["dept_weekday"]:
+        return "진료 시각을 입력하려면 요일을 선택해 주세요."
     return None
 
 
@@ -280,9 +310,32 @@ def search(view="institutions"):
     error = validate(fields, values, options) if submitted else None
     rows = []
     if submitted and not error:
-        # 한 행을 더 조회해 다음 페이지가 있는지 판단
-        sql, params = disease_query(values) if view == "diseases" else institution_query(view, values)
-        rows = query(sql + " LIMIT ? OFFSET ?", [*params, PAGE_SIZE + 1, (page - 1) * PAGE_SIZE])
+        offset = (page - 1) * PAGE_SIZE
+        if view == "diseases":
+            rows = list(islice(disease_results(values), offset, offset + PAGE_SIZE + 1))
+        else:
+            sql, params = institution_query(view, values)
+            if view == "regions":
+                counts = query(sql, params)
+                total = sum(row["total"] for row in counts)
+                previous_count, rank = None, 0
+                for position, row in enumerate(counts, 1):
+                    if row["total"] != previous_count:
+                        previous_count, rank = row["total"], position
+                    row["share"] = 100 * row["total"] / total
+                    row["rank_no"] = rank
+                rows = counts[offset:offset + PAGE_SIZE + 1]
+            else:
+                # 상위 N 범위 안에서만 다음 페이지에 필요한 한 행을 추가 조회
+                limit = PAGE_SIZE + 1
+                if view == "rankings":
+                    limit = max(0, min(limit, int(values["top_n"]) - offset))
+                rows = query(sql + " LIMIT ? OFFSET ?", [*params, limit, offset])
+                if view == "rankings":
+                    for position, row in enumerate(rows, offset + 1):
+                        row["rank_no"] = position
+    if view == "diseases":
+        values["district"] = ""  # 기존 기관 보기 링크에 필요한 기본값
     return render_template("index.html", view=view, views=VIEWS, title=title, fields=fields,
                            field_specs=FIELDS, values=values, options=options, headings=headings,
                            rows=rows[:PAGE_SIZE], next_page=len(rows) > PAGE_SIZE, page=page,
