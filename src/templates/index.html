@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | 의료기관 조회</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header><div class="wrap"><a href="{{ url_for('search', view='institutions') }}">의료기관 조회</a></div></header>
+  <main class="wrap">
+    <nav aria-label="조회 기능">
+    {% for key, item in views.items() %}
+      <a href="{{ url_for('search', view=key) }}"{% if key == view %} aria-current="page"{% endif %}>{{ item[0] }}</a>
+    {% endfor %}
+    </nav>
+    <section class="panel">
+      <h1>{{ title }}</h1>
+      {% if view == 'diseases' %}
+        <p class="note">검색어를 포함한 질병명을 표시합니다. 진료과 순위와 환자 수는 상병코드 앞 3자리를 기준으로 제공되는 병원급 이상 의료기관의 2025년 통계입니다. 지역 조건은 기관 수와 기관 목록에 적용됩니다.</p>
+      {% elif view == 'hours' %}
+        <p class="note">등록된 기관의 진료시간 기준입니다. 진료과별 일정과 휴진 여부는 방문 전에 기관에 확인하세요.</p>
+      {% endif %}
+      <form method="get">
+        <div class="fields">
+        {% for field in fields %}
+          {% set label, kind, required, default, minimum, maximum = field_specs[field] %}
+          <div>
+            <label for="{{ field }}">{{ label }}{% if required %} <span class="required" aria-hidden="true">*</span>{% endif %}</label>
+            {% if kind == 'select' %}
+              <select id="{{ field }}" name="{{ field }}"{% if required %} required{% endif %}>
+                {% if not default %}<option value="">{{ '선택' if required else '전체' }}</option>{% endif %}
+                {% for item in options[field] %}
+                  <option value="{{ item.value }}"{% if item.value == values[field] %} selected{% endif %}{% if field == 'district' %} data-region="{{ item.region }}"{% endif %}>{{ item.label }}{% if field == 'district' %} ({{ item.region }}){% endif %}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <input id="{{ field }}" name="{{ field }}" type="{{ kind }}" value="{{ values[field] }}"
+                {% if required %}required{% endif %}
+                {% if kind == 'number' %}min="{{ minimum }}" max="{{ maximum }}"{% endif %}
+                {% if field == 'disease' %}placeholder="예: 당뇨, E11"{% endif %}>
+            {% endif %}
+          </div>
+        {% endfor %}
+        </div>
+        <button type="submit" name="run" value="1">조회</button>
+        <a class="reset" href="{{ url_for('search', view=view) }}">초기화</a>
+      </form>
+      {% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
+    </section>
+    {% if submitted and not error %}
+      <section class="panel">
+        <h2>조회 결과</h2>
+        {% if rows %}
+          <div class="table-scroll" tabindex="0" aria-label="조회 결과 표">
+            <table>
+              <thead><tr>{% for heading in headings %}
+                {% if not (view == 'regions' and values.group == 'sido' and heading == '시군구') %}
+                  <th scope="col">{{ heading }}</th>
+                {% endif %}
+              {% endfor %}</tr></thead>
+              <tbody>
+              {% for row in rows %}
+                <tr>{% for key, value in row.items() %}
+                  {% if view == 'diseases' and key == 'dept_cd' %}
+                    <td>{% if row.local_count %}<a href="{{ url_for('search', view='departments', dept=value, sido=values.sido, district=values.district) }}">기관 보기</a>{% else %}—{% endif %}</td>
+                  {% elif not (view == 'regions' and values.group == 'sido' and key == 'sigungu_nm') %}
+                    <td>{% if key == 'share' and value is not none %}{{ '%.1f'|format(value) }}%{% else %}{{ value|cell }}{% endif %}</td>
+                  {% endif %}
+                {% endfor %}</tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p>조건에 맞는 결과가 없습니다.</p>
+        {% endif %}
+        {% if page > 1 or next_page %}
+          <div class="pagination">
+            {% if page > 1 %}<a href="{{ url_for('search', view=view, page=page - 1, **values) }}">이전</a>{% endif %}
+            <span>{{ page }}쪽</span>
+            {% if next_page %}<a href="{{ url_for('search', view=view, page=page + 1, **values) }}">다음</a>{% endif %}
+          </div>
+        {% endif %}
+      </section>
+    {% endif %}
+    <footer>자료 제공 건강보험심사평가원 · 의료기관 자료 2026년 9월</footer>
+  </main>
+  <script>
+    const sido = document.querySelector('#sido');
+    const district = document.querySelector('#district');
+    if (sido && district) {
+      const filterDistricts = () => {
+        for (const option of district.options) {
+          option.hidden = Boolean(option.dataset.region && sido.value && option.dataset.region !== sido.value);
+          option.disabled = option.hidden;
+        }
+        if (district.selectedOptions[0]?.disabled) district.value = '';
+      };
+      sido.addEventListener('change', filterDistricts);
+      filterDistricts();
+    }
+  </script>
+</body>
+</html>
