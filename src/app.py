@@ -1,24 +1,18 @@
-# =====================================================================
 # 의료기관 조회 Flask 응용프로그램
 # 처리 흐름 · 검색 조건 검증 → SQL 조회 → 결과 표 표시
-# SQLite 파일이 없는 첫 실행에서 load_db.py의 DB 생성 함수 호출
-# =====================================================================
+# 팀 SQL 덤프로 복원한 MySQL hira_db를 기본 조회 대상으로 사용
 
 import os
-import sqlite3
 from collections import defaultdict
 from datetime import timedelta
 from itertools import islice
 
 from flask import Flask, abort, g, render_template, request
 
-from load_db import DATABASE, WEEKDAYS, build_sqlite, mysql_connect
-
-# ---------------------------------------------------------------------
 # 1. 화면 구성 · 조회 메뉴, 입력 항목, 결과 열 정의
-# ---------------------------------------------------------------------
 app = Flask(__name__)
 PAGE_SIZE = 30
+WEEKDAYS = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
 REGION = ["sido", "district"]
 AREA = [*REGION, "type"]
 
@@ -73,22 +67,30 @@ OPTION_SQL = {
 }
 
 
-# ---------------------------------------------------------------------
 # 2. DB 처리 · 요청별 연결 관리 및 검색 조건 구성
-# ---------------------------------------------------------------------
+def mysql_connect():
+    # 환경 변수에 지정된 팀 MySQL DB에 연결
+    import pymysql
+
+    return pymysql.connect(
+        host=os.getenv("HIRA_MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("HIRA_MYSQL_PORT", "3306")),
+        user=os.getenv("HIRA_MYSQL_USER", "root"),
+        password=os.getenv("HIRA_MYSQL_PASSWORD", ""),
+        database=os.getenv("HIRA_MYSQL_DATABASE", "hira_db"),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
 def query(sql, params=()):
     # 요청별 SQL 실행 및 결과 반환
-    # 같은 요청에서 연결 재사용, MySQL 실행 시 자리표시자만 변환
-    mysql = os.getenv("HIRA_DB") == "mysql"
+    # 같은 요청에서 팀 MySQL DB 연결 재사용
     if "db" not in g:
-        g.db = mysql_connect() if mysql else sqlite3.connect(DATABASE.as_uri() + "?mode=ro", uri=True)
-        if not mysql:
-            g.db.row_factory = sqlite3.Row
-    if mysql:
-        with g.db.cursor() as cursor:
-            cursor.execute(sql.replace("?", "%s"), params)
-            return cursor.fetchall()
-    return [dict(row) for row in g.db.execute(sql, params)]
+        g.db = mysql_connect()
+    with g.db.cursor() as cursor:
+        cursor.execute(sql.replace("?", "%s"), params or None)
+        return cursor.fetchall()
 
 
 @app.teardown_appcontext
@@ -121,9 +123,7 @@ def where(filters):
             [value for _, value in filters])
 
 
-# ---------------------------------------------------------------------
 # 3. 조회 SQL · 기관 검색, 지역 집계 및 질병 안내
-# ---------------------------------------------------------------------
 def institution_query(view, values):
     # 조회 메뉴별 의료기관 검색 SQL 생성
     filters = region_filters(values)
@@ -257,9 +257,7 @@ def disease_results(values):
             }
 
 
-# ---------------------------------------------------------------------
 # 4. 화면 처리 · 입력 검증, 결과 표, 페이지 이동
-# ---------------------------------------------------------------------
 def validate(fields, values, options):
     # 검색 조건의 필수값·선택값·입력 범위 검증
     for field in fields:
@@ -343,6 +341,5 @@ def search(view="institutions"):
 
 
 if __name__ == "__main__":
-    if os.getenv("HIRA_DB") != "mysql" and not DATABASE.exists():
-        build_sqlite()
     app.run()
+

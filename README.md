@@ -10,32 +10,37 @@
 
 ## Flask 웹앱 로컬 실행
 
-프로젝트 루트에서 PowerShell로 실행합니다. Flask가 이미 설치되어 있으면 첫 줄은 건너뛰어도 됩니다.
+### 팀 MySQL DB 준비
+
+`hira_db`가 이미 준비되어 있으면 Flask 실행 단계로 넘어갑니다. 새로 구축하는 경우 MySQL 8.0의 빈 환경에서 아래 순서대로 실행합니다.
+
+1. [`schema.sql`](schema.sql)을 MySQL에서 실행해 테이블 16개와 뷰 1개를 생성합니다.
+2. [`load_data.py`](load_data.py)에 `--dir DB`를 지정해 기본 테이블 12개를 적재합니다.
+3. [`load_disease.py`](load_disease.py)에 `--master`와 `--stat`으로 두 상병 CSV 파일을 지정해 질병 테이블 4개를 적재합니다.
+
+적재에는 `pandas`와 `PyMySQL`이 필요합니다. 두 적재 스크립트와 Flask에 같은 MySQL 호스트·계정·데이터베이스를 지정합니다.
+
+### Flask 실행
+
+프로젝트 루트의 PowerShell에서 실행합니다.
 
 ```powershell
-python -m pip install Flask
+python -m pip install Flask "PyMySQL[rsa]"
 cd src
+$env:HIRA_MYSQL_USER = 'root'
+$env:HIRA_MYSQL_PASSWORD = Read-Host 'MySQL 비밀번호' -MaskInput
 python app.py
 ```
 
-서버가 켜지면 브라우저에서 [http://127.0.0.1:5000](http://127.0.0.1:5000)을 엽니다. 기본 실행은 SQLite를 사용합니다. `src/hira.sqlite3` 파일이 없으면 첫 실행 때 `DB/`의 CSV와 `설계/schema.sql`로 자동 생성합니다. 첫 실행은 몇 초 더 걸릴 수 있습니다.
-
-### 파일 역할과 DB 갱신
-
-- [`src/app.py`](src/app.py)는 Flask 웹을 실행하고, 검색 조건으로 DB를 조회해 결과를 화면에 표시합니다.
-- [`src/load_db.py`](src/load_db.py)는 `DB/`의 CSV와 `설계/schema.sql`을 읽어 조회용 SQLite DB를 만듭니다. 첫 실행에서 DB 파일이 없으면 `app.py`가 이 생성 함수를 호출합니다.
-- [`src/templates/index.html`](src/templates/index.html)과 [`src/static/style.css`](src/static/style.css)는 로컬 Flask 화면의 구조와 스타일을 담당합니다.
-
-CSV 또는 스키마가 바뀌면 `src`에서 `python load_db.py`를 실행한 뒤 `python app.py`로 서버를 다시 시작합니다. GitHub에는 원본 CSV와 설계 SQL을 두고, 생성된 SQLite 파일은 실행할 컴퓨터에서 만듭니다.
-
-과제용 MySQL은 [팀 DB 공유 안내](HIRA_DB_GUIDE.md)의 덤프를 복원해 사용합니다. 공유 덤프가 UTF-16이면 UTF-8 복사본을 만든 뒤 MySQL로 가져옵니다. Flask 연결에는 `python -m pip install "PyMySQL[rsa]"`와 `HIRA_DB=mysql`, `HIRA_MYSQL_USER`, `HIRA_MYSQL_PASSWORD` 설정이 필요합니다.
+브라우저에서 [http://127.0.0.1:5000](http://127.0.0.1:5000)을 엽니다. Flask는 기본적으로 `127.0.0.1:3306`의 `hira_db`를 조회합니다. 필요한 경우 `HIRA_MYSQL_HOST`, `HIRA_MYSQL_PORT`, `HIRA_MYSQL_DATABASE`를 설정할 수 있습니다.
 
 ## 폴더 구성
 
 | 경로 | 내용 |
 |---|---|
-| [`src/`](src/) | Flask 웹앱 소스 · [`app.py`](src/app.py), [`load_db.py`](src/load_db.py), [`index.html`](src/templates/index.html), [`style.css`](src/static/style.css) |
-| [`설계/`](%EC%84%A4%EA%B3%84/) | DB 스키마와 ER 다이어그램 |
+| [`src/`](src/) | Flask 웹앱 소스 · [`app.py`](src/app.py), [`index.html`](src/templates/index.html), [`style.css`](src/static/style.css) |
+| [`설계/`](%EC%84%A4%EA%B3%84/) | 설계 자료와 ER 다이어그램 |
+| [`schema.sql`](schema.sql), [`load_data.py`](load_data.py), [`load_disease.py`](load_disease.py) | MySQL 스키마와 팀 데이터 적재 코드 |
 | [`DB/`](DB/) | 설계에서 사용하는 원본 CSV 9개 (병원·약국정보, 상세정보 01 시설·02 세부·03 진료과목·05 의료장비·08 특수진료, 상병마스터, 진료과목별 상병 통계) |
 | [`설계/schema.sql`](%EC%84%A4%EA%B3%84/schema.sql) | 테이블 생성 스크립트 |
 | [`설계/ER_full.png`](%EC%84%A4%EA%B3%84/ER_full.png), [`설계/hira_ER_chen_full.drawio`](%EC%84%A4%EA%B3%84/hira_ER_chen_full.drawio) | ER 다이어그램 |
@@ -49,12 +54,12 @@ CSV 또는 스키마가 바뀌면 `src`에서 `python load_db.py`를 실행한 �
 |---|---|---|
 | ① | 의료기관 검색 | 기관명·종별·설립구분·지역으로 기관 찾기 |
 | ② | 진료과목별 기관 | 진료과목을 고르면 해당 기관을 전문의 수 순으로 보여줌 |
-| ③ | 지역별 기관 수 | 시도/시군구·종별·개설 연도별 기관 수 집계 |
+| ③ | 지역별 기관 수 | 종별로 시도별 기관 수·비율·순위 집계 |
 | ④ | 질병으로 진료과 찾기 | 질병명·상병코드 → 환자 수 상위 진료과 → 지역 기관 수 |
 | ⑤ | 의료장비 보유 기관 | 장비 종류·최소 대수로 기관 찾기 |
 | ⑥ | 요일·시각별 진료 | 요일·시각·진료과목으로 진료 중인 기관 찾기 |
 | ⑦ | 지정·시범사업 참여 | 특수진료·시범사업 참여 기관 찾기 |
-| ⑧ | 진료과목 다양성 순위 | 진료과목 수·전문의 합계가 많은 기관 순위 |
+| ⑧ | 진료과목 다양성 순위 | 진료과목 수 순으로 상위 N개 기관 표시 |
 
 ## 진행해야 할 일
 
