@@ -12,17 +12,17 @@
 
 ### 팀 MySQL DB 준비
 
-`hira_db`가 이미 준비되어 있으면 Flask 실행 단계로 넘어갑니다. 새로 구축하는 경우 MySQL 8.0의 빈 환경에서 아래 순서대로 실행합니다.
+`hira_db`가 이미 준비되어 있으면 Flask 실행 단계로 넘어갑니다. 새로 구축하는 경우 프로젝트 루트에서 `cd src`로 이동한 뒤 MySQL 8.0의 빈 환경에서 아래 순서대로 실행합니다.
 
-1. [`schema.sql`](schema.sql)을 MySQL에서 실행해 테이블 16개와 뷰 1개를 생성합니다.
-2. [`load_data.py`](load_data.py)에 `--dir DB`를 지정해 기본 테이블 12개를 적재합니다.
-3. [`load_disease.py`](load_disease.py)에 `--master`와 `--stat`으로 두 상병 CSV 파일을 지정해 질병 테이블 4개를 적재합니다.
+1. [`schema.sql`](src/schema.sql)을 MySQL에서 실행해 테이블 16개와 뷰 1개를 생성합니다.
+2. [`load_data.py`](src/load_data.py)에 `--dir ../DB`를 지정해 기본 테이블 12개를 적재합니다.
+3. [`load_disease.py`](src/load_disease.py)에 `--master`와 `--stat`으로 두 상병 CSV 파일을 지정해 질병 테이블 4개를 적재합니다.
 
 적재에는 `pandas`와 `PyMySQL`이 필요합니다. 두 적재 스크립트와 Flask에 같은 MySQL 호스트·계정·데이터베이스를 지정합니다.
 
 ### Flask 실행
 
-프로젝트 루트의 PowerShell에서 실행합니다.
+프로젝트 루트의 PowerShell에서 실행합니다. 이미 `src`에 있으면 `cd src`를 건너뜁니다.
 
 ```powershell
 python -m pip install Flask "PyMySQL[rsa]"
@@ -40,9 +40,9 @@ python app.py
 |---|---|
 | [`src/`](src/) | Flask 웹앱 소스 · [`app.py`](src/app.py), [`index.html`](src/templates/index.html), [`style.css`](src/static/style.css) |
 | [`설계/`](%EC%84%A4%EA%B3%84/) | 설계 자료와 ER 다이어그램 |
-| [`schema.sql`](schema.sql), [`load_data.py`](load_data.py), [`load_disease.py`](load_disease.py) | MySQL 스키마와 팀 데이터 적재 코드 |
+| [`schema.sql`](src/schema.sql), [`load_data.py`](src/load_data.py), [`load_disease.py`](src/load_disease.py) | MySQL 스키마와 팀 데이터 적재 코드 |
 | [`DB/`](DB/) | 설계에서 사용하는 원본 CSV 9개 (병원·약국정보, 상세정보 01 시설·02 세부·03 진료과목·05 의료장비·08 특수진료, 상병마스터, 진료과목별 상병 통계) |
-| [`설계/schema.sql`](%EC%84%A4%EA%B3%84/schema.sql) | 테이블 생성 스크립트 |
+| [`설계/schema.sql`](%EC%84%A4%EA%B3%84/schema.sql) | 초기 설계 참고용 스키마 |
 | [`설계/ER_full.png`](%EC%84%A4%EA%B3%84/ER_full.png), [`설계/hira_ER_chen_full.drawio`](%EC%84%A4%EA%B3%84/hira_ER_chen_full.drawio) | ER 다이어그램 |
 | [`DB_기말대체프로젝트_정리.pdf`](DB_%EA%B8%B0%EB%A7%90%EB%8C%80%EC%B2%B4%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8_%EC%A0%95%EB%A6%AC.pdf) | 과제 요구사항·진행 정리 |
 
