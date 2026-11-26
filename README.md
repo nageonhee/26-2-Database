@@ -34,11 +34,12 @@ CSV 또는 스키마가 바뀌면 `src`에서 `python load_db.py`를 실행한 �
 
 | 경로 | 내용 |
 |---|---|
-| [`src/`](src/) | Flask 웹앱 소스 |
-| `DB/` | 설계에서 사용하는 원본 CSV 9개 (병원·약국정보, 상세정보 01 시설·02 세부·03 진료과목·05 의료장비·08 특수진료, 상병마스터, 진료과목별 상병 통계) |
-| `설계/schema.sql` | 테이블 생성 스크립트 |
-| `설계/ER_full.png`, `설계/hira_ER_chen_full.drawio` | ER 다이어그램 |
-| `DB_기말대체프로젝트_정리.pdf` | 과제 요구사항·진행 정리 |
+| [`src/`](src/) | Flask 웹앱 소스 · [`app.py`](src/app.py), [`load_db.py`](src/load_db.py), [`index.html`](src/templates/index.html), [`style.css`](src/static/style.css) |
+| [`설계/`](%EC%84%A4%EA%B3%84/) | DB 스키마와 ER 다이어그램 |
+| [`DB/`](DB/) | 설계에서 사용하는 원본 CSV 9개 (병원·약국정보, 상세정보 01 시설·02 세부·03 진료과목·05 의료장비·08 특수진료, 상병마스터, 진료과목별 상병 통계) |
+| [`설계/schema.sql`](%EC%84%A4%EA%B3%84/schema.sql) | 테이블 생성 스크립트 |
+| [`설계/ER_full.png`](%EC%84%A4%EA%B3%84/ER_full.png), [`설계/hira_ER_chen_full.drawio`](%EC%84%A4%EA%B3%84/hira_ER_chen_full.drawio) | ER 다이어그램 |
+| [`DB_기말대체프로젝트_정리.pdf`](DB_%EA%B8%B0%EB%A7%90%EB%8C%80%EC%B2%B4%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8_%EC%A0%95%EB%A6%AC.pdf) | 과제 요구사항·진행 정리 |
 
 주요 테이블: `sido`, `sigungu`, `institution`, `institution_type`, `ownership_type`, `dept`, `institution_dept`, `equipment_type`, `institution_equip`, `program`, `institution_program`, `business_hours`, `disease3`, `disease`, `disease_name`, `dept_disease_stat`
 
