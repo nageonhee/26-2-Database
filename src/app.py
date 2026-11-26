@@ -1,3 +1,9 @@
+# =====================================================================
+# 의료기관 조회 Flask 응용프로그램
+# 처리 흐름 · 검색 조건 검증 → SQL 조회 → 결과 표 표시
+# SQLite 파일이 없는 첫 실행에서 load_db.py의 DB 생성 함수 호출
+# =====================================================================
+
 import os
 import sqlite3
 from datetime import timedelta
@@ -6,6 +12,9 @@ from flask import Flask, abort, g, render_template, request
 
 from load_db import DATABASE, WEEKDAYS, build_sqlite, mysql_connect
 
+# ---------------------------------------------------------------------
+# 1. 화면 구성 · 조회 메뉴, 입력 항목, 결과 열 정의
+# ---------------------------------------------------------------------
 app = Flask(__name__)
 PAGE_SIZE = 30
 REGION = ["sido", "district"]
@@ -68,7 +77,12 @@ OPTION_SQL = {
 }
 
 
+# ---------------------------------------------------------------------
+# 2. DB 처리 · 요청별 연결 관리 및 검색 조건 구성
+# ---------------------------------------------------------------------
 def query(sql, params=()):
+    # 요청별 SQL 실행 및 결과 반환
+    # 같은 요청에서 연결 재사용, MySQL 실행 시 자리표시자만 변환
     mysql = os.getenv("HIRA_DB") == "mysql"
     if "db" not in g:
         g.db = mysql_connect() if mysql else sqlite3.connect(DATABASE.as_uri() + "?mode=ro", uri=True)
@@ -83,11 +97,13 @@ def query(sql, params=()):
 
 @app.teardown_appcontext
 def close_db(_error):
+    # 요청 종료 시 DB 연결 해제
     if db := g.pop("db", None):
         db.close()
 
 
 def options_for(fields):
+    # 조회 화면의 선택 목록 구성
     options = {field: query(OPTION_SQL[field]) for field in fields if field in OPTION_SQL}
     options["group"] = [{"value": "sido", "label": "시도별"}, {"value": "district", "label": "시군구별"}]
     options["weekday"] = [{"value": str(i), "label": label} for i, label in enumerate(WEEKDAYS, 1)]
@@ -95,16 +111,22 @@ def options_for(fields):
 
 
 def region_filters(values):
+    # 시도·시군구·종별 SQL 필터 생성
     columns = {"sido": "sido_nm", "district": "sigungu_cd", "type": "type_nm"}
     return [(f"i.{col} = ?", values[key]) for key, col in columns.items() if values.get(key)]
 
 
 def where(filters):
+    # WHERE 절과 바인딩 값 조합
     return (" WHERE " + " AND ".join(clause for clause, _ in filters) if filters else "",
             [value for _, value in filters])
 
 
+# ---------------------------------------------------------------------
+# 3. 조회 SQL · 기관 검색, 지역 집계 및 질병 안내
+# ---------------------------------------------------------------------
 def institution_query(view, values):
+    # 조회 메뉴별 의료기관 검색 SQL 생성
     filters = region_filters(values)
     source = " FROM v_institution i"
     order = "i.inst_nm, i.inst_id"
@@ -164,6 +186,9 @@ def institution_query(view, values):
 
 
 def disease_query(values):
+    # 질병명 포함 검색과 진료과 순위·지역별 기관 수 조회
+    # 상병명은 세부 코드로 표시하고 진료과 순위는 앞 3자리 통계로 계산
+    # 지역 조건은 진료과별 기관 수 집계에만 적용
     condition, params = where(region_filters(values))
     search = values["disease"]
     code = search.upper().replace(".", "")
@@ -202,7 +227,11 @@ def disease_query(values):
     """, [search, code or search, *params, int(values["top"]), code[:3]]
 
 
+# ---------------------------------------------------------------------
+# 4. 화면 처리 · 입력 검증, 결과 표, 페이지 이동
+# ---------------------------------------------------------------------
 def validate(fields, values, options):
+    # 검색 조건의 필수값·선택값·입력 범위 검증
     for field in fields:
         label, kind, required, _, minimum, maximum = FIELDS[field]
         value = values[field]
@@ -226,6 +255,7 @@ def validate(fields, values, options):
 
 @app.template_filter("cell")
 def format_cell(value):
+    # 빈 값과 시간 값의 표시 형식 변환
     if value is None or value == "":
         return "—"
     if isinstance(value, timedelta):
@@ -239,6 +269,7 @@ def format_cell(value):
 @app.get("/")
 @app.get("/<view>")
 def search(view="institutions"):
+    # 조회 요청 검증 및 페이지별 결과 표시
     if view not in VIEWS:
         abort(404)
     title, fields, headings = VIEWS[view]
@@ -249,6 +280,7 @@ def search(view="institutions"):
     error = validate(fields, values, options) if submitted else None
     rows = []
     if submitted and not error:
+        # 한 행을 더 조회해 다음 페이지가 있는지 판단
         sql, params = disease_query(values) if view == "diseases" else institution_query(view, values)
         rows = query(sql + " LIMIT ? OFFSET ?", [*params, PAGE_SIZE + 1, (page - 1) * PAGE_SIZE])
     return render_template("index.html", view=view, views=VIEWS, title=title, fields=fields,

@@ -20,6 +20,16 @@ python app.py
 
 서버가 켜지면 브라우저에서 [http://127.0.0.1:5000](http://127.0.0.1:5000)을 엽니다. 기본 실행은 SQLite를 사용합니다. `src/hira.sqlite3` 파일이 없으면 첫 실행 때 `DB/`의 CSV와 `설계/schema.sql`로 자동 생성합니다. 첫 실행은 몇 초 더 걸릴 수 있습니다.
 
+### 파일 역할과 DB 갱신
+
+- [`src/app.py`](src/app.py)는 Flask 웹을 실행하고, 검색 조건으로 DB를 조회해 결과를 화면에 표시합니다.
+- [`src/load_db.py`](src/load_db.py)는 `DB/`의 CSV와 `설계/schema.sql`을 읽어 조회용 SQLite DB를 만듭니다. 첫 실행에서 DB 파일이 없으면 `app.py`가 이 생성 함수를 호출합니다.
+- [`src/templates/index.html`](src/templates/index.html)과 [`src/static/style.css`](src/static/style.css)는 로컬 Flask 화면의 구조와 스타일을 담당합니다.
+
+CSV 또는 스키마가 바뀌면 `src`에서 `python load_db.py`를 실행한 뒤 `python app.py`로 서버를 다시 시작합니다. GitHub에는 원본 CSV와 설계 SQL을 두고, 생성된 SQLite 파일은 실행할 컴퓨터에서 만듭니다.
+
+과제용 MySQL은 [팀 DB 공유 안내](HIRA_DB_GUIDE.md)의 덤프를 복원해 사용합니다. 공유 덤프가 UTF-16이면 UTF-8 복사본을 만든 뒤 MySQL로 가져옵니다. Flask 연결에는 `python -m pip install "PyMySQL[rsa]"`와 `HIRA_DB=mysql`, `HIRA_MYSQL_USER`, `HIRA_MYSQL_PASSWORD` 설정이 필요합니다.
+
 ## 폴더 구성
 
 | 경로 | 내용 |
@@ -63,5 +73,5 @@ python app.py
 
 ### [건희님·상현님] app.py
 
-- [ ] 병상 현황 기능(`q_bed`) 삭제
-- [ ] ④ 질병으로 진료과 찾기 추가 (질병명 → 상위 진료과 → [기관 보기] → ②번 기능으로 연결)
+- [x] 병상 현황 기능(`q_bed`) 삭제
+- [x] ④ 질병으로 진료과 찾기 추가 (질병명 → 상위 진료과 → [기관 보기] → ②번 기능으로 연결)

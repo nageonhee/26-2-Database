@@ -1,3 +1,9 @@
+# =====================================================================
+# 의료기관 데이터 적재
+# 처리 흐름 · 설계 SQL 적용 → CSV 정제 및 적재 → 조회용 DB 생성
+# 원본 · 건강보험심사평가원 의료기관 및 상병 CSV
+# =====================================================================
+
 import argparse
 import csv
 import os
@@ -21,7 +27,11 @@ GUIDE_EXCLUDED = set(
 )
 
 
+# ---------------------------------------------------------------------
+# 1. 적재 공통 처리 · CSV 읽기, 스키마 변환, 원본 값 정제
+# ---------------------------------------------------------------------
 def csv_rows(pattern):
+    # 원본 CSV를 열 이름 기준으로 읽기
     if isinstance(pattern, int):
         pattern = f"{pattern}.*.csv"
     path, = (PROJECT / "DB").glob(pattern)
@@ -30,6 +40,7 @@ def csv_rows(pattern):
 
 
 def schema_parts():
+    # 설계 SQL의 테이블·뷰 생성 구문 추출
     source = SCHEMA.read_text(encoding="utf-8-sig")
     return re.findall(
         r"^CREATE (?:TABLE|VIEW) .+?(?=;[ \t]*$)",
@@ -39,6 +50,7 @@ def schema_parts():
 
 
 def sqlite_schema(db):
+    # SQLite용 테이블·뷰 생성
     indexes = []
     for statement in schema_parts():
         table = statement.split()[2]
@@ -58,6 +70,7 @@ def sqlite_schema(db):
 
 
 def insert(db, table, rows):
+    # 지정 테이블에 데이터 일괄 삽입
     rows = iter(rows)
     first = next(rows, None)
     if first is None:
@@ -67,15 +80,18 @@ def insert(db, table, rows):
 
 
 def integer(value):
+    # CSV 숫자 문자열의 정수 변환
     return int(value.strip().replace(",", "") or 0)
 
 
 def coordinate(value, low, high):
+    # 허용 범위 내 좌표의 숫자 변환
     number = float(value) if value.strip() else None
     return number if number is not None and low <= number <= high else None
 
 
 def opened_on(value):
+    # 유효한 개설일의 날짜 문자열 변환
     if value and value != "1900-01-01":
         try:
             return date.fromisoformat(value).isoformat()
@@ -85,6 +101,7 @@ def opened_on(value):
 
 
 def clock(value):
+    # 진료시간의 시·분·초 형식 변환
     value = value.strip()
     if not re.fullmatch(r"[0-9]{1,4}", value):
         return None
@@ -94,7 +111,12 @@ def clock(value):
     return None
 
 
+# ---------------------------------------------------------------------
+# 2. 기관 데이터 · 기본 정보와 진료과·장비·운영시간 연결
+# ---------------------------------------------------------------------
 def load_institutions(db):
+    # 의료기관 및 지역·종별·설립구분 데이터 적재
+    # 암호화요양기호로 병원·약국 기본 정보와 시설 정보 연결
     base = {}
     for number in (1, 2):
         for row in csv_rows(number):
@@ -136,6 +158,7 @@ def load_institutions(db):
 
 
 def load_relation(db, ids, number, lookup, relation, code_col, name_col, count_col=None):
+    # 분류 코드와 기관별 연결 데이터 적재
     names = defaultdict(Counter)
     links = {}
     for row in csv_rows(number):
@@ -155,6 +178,7 @@ def load_relation(db, ids, number, lookup, relation, code_col, name_col, count_c
 
 
 def load_hours(db, ids):
+    # 기관별 요일 및 진료시간 추출
     for row in csv_rows(4):
         inst_id = ids.get(row["암호화요양기호"])
         if inst_id is None:
@@ -166,7 +190,12 @@ def load_hours(db, ids):
                 yield inst_id, day, start, end
 
 
+# ---------------------------------------------------------------------
+# 3. 질병 데이터 · 상병마스터와 진료과별 환자 통계 연결
+# ---------------------------------------------------------------------
 def load_diseases(db, departments):
+    # 상병마스터 및 진료과별 환자 통계 적재
+    # 세부 상병코드 앞 3자리로 통계와 연결하고 중복 상병명 제거
     groups, names, codes, titles = {}, {}, {}, {}
     for row in csv_rows("*상병마스터*.csv"):
         code = row["상병기호"].strip().upper()
@@ -197,7 +226,12 @@ def load_diseases(db, departments):
     insert(db, "dept_disease_stat", stats)
 
 
+# ---------------------------------------------------------------------
+# 4. DB 구축 · SQLite 생성 및 선택적 MySQL 적재
+# ---------------------------------------------------------------------
 def build_sqlite():
+    # 원본 데이터로 SQLite DB 파일 생성
+    # 임시 DB 적재가 성공한 뒤 기존 파일 교체
     with NamedTemporaryFile(dir=ROOT, suffix=".sqlite3.tmp", delete=False) as temporary:
         path = Path(temporary.name)
     try:
@@ -220,6 +254,7 @@ def build_sqlite():
 
 
 def mysql_connect():
+    # 환경 변수에 지정된 MySQL DB 연결
     import pymysql
     return pymysql.connect(
         host=os.getenv("HIRA_MYSQL_HOST", "127.0.0.1"),
@@ -233,6 +268,7 @@ def mysql_connect():
 
 
 def load_mysql():
+    # SQLite 데이터를 MySQL의 빈 테이블로 복사
     with closing(sqlite3.connect(DATABASE)) as source, mysql_connect() as target:
         with target.cursor() as cursor:
             cursor.execute("SHOW TABLES")

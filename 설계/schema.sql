@@ -69,7 +69,7 @@ CREATE TABLE institution (
   ownership_cd CHAR(2)      NOT NULL COMMENT '설립구분코드',
   sigungu_cd   CHAR(6)      NOT NULL COMMENT '시군구코드',
   emd_nm       VARCHAR(20)  NULL     COMMENT '읍면동',
-  zip_cd       CHAR(5)      NULL     COMMENT '우편번호(00000은 NULL 처리)',
+  zip_cd       VARCHAR(6)   NULL     COMMENT '우편번호(구 우편번호 6자리 보존, 00000은 NULL 처리)',
   address      VARCHAR(200) NOT NULL COMMENT '도로명주소(표기용 문자열)',
   phone        VARCHAR(20)  NULL     COMMENT '전화번호',
   opened_on    DATE         NULL     COMMENT '개설일자(1900-01-01 미상값은 NULL)',
@@ -194,7 +194,7 @@ CREATE TABLE disease (
 CREATE TABLE disease_name (
   dis_cd VARCHAR(10)  NOT NULL COMMENT '상병기호',
   dis_nm VARCHAR(200) NOT NULL COMMENT '상병 한글명',
-  dis_en VARCHAR(200) NULL     COMMENT '상병 영문명',
+  dis_en VARCHAR(500) NULL     COMMENT '상병 영문명',
   PRIMARY KEY (dis_cd, dis_nm),
   KEY ix_disease_name_nm (dis_nm),
   CONSTRAINT fk_dname_disease FOREIGN KEY (dis_cd) REFERENCES disease (dis_cd) ON DELETE CASCADE
