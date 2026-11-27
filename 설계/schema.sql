@@ -69,7 +69,7 @@ CREATE TABLE institution (
   ownership_cd CHAR(2)      NOT NULL COMMENT '설립구분코드',
   sigungu_cd   CHAR(6)      NOT NULL COMMENT '시군구코드',
   emd_nm       VARCHAR(20)  NULL     COMMENT '읍면동',
-  zip_cd       VARCHAR(6)   NULL     COMMENT '우편번호(구 우편번호 6자리 보존, 00000은 NULL 처리)',
+  zip_cd       CHAR(5)      NULL     COMMENT '우편번호(00000은 NULL 처리)',
   address      VARCHAR(200) NOT NULL COMMENT '도로명주소(표기용 문자열)',
   phone        VARCHAR(20)  NULL     COMMENT '전화번호',
   opened_on    DATE         NULL     COMMENT '개설일자(1900-01-01 미상값은 NULL)',
@@ -194,7 +194,7 @@ CREATE TABLE disease (
 CREATE TABLE disease_name (
   dis_cd VARCHAR(10)  NOT NULL COMMENT '상병기호',
   dis_nm VARCHAR(200) NOT NULL COMMENT '상병 한글명',
-  dis_en VARCHAR(500) NULL     COMMENT '상병 영문명',
+  dis_en VARCHAR(300) NULL     COMMENT '상병 영문명(최대 223자)',
   PRIMARY KEY (dis_cd, dis_nm),
   KEY ix_disease_name_nm (dis_nm),
   CONSTRAINT fk_dname_disease FOREIGN KEY (dis_cd) REFERENCES disease (dis_cd) ON DELETE CASCADE
@@ -233,8 +233,7 @@ JOIN sido            sd  ON sd.sido_cd = sg.sido_cd;
 
 
 -- =====================================================================
--- [데이터 적재 후 실행] 안내 제외 진료과목 표시 (목록은 팀 확정 필요)
+-- [참고] 질병 안내 제외 진료과목(dept.is_guide = 0)은 load_disease.py가 적재할 때 설정함
+--        (일반의·응급의학과·진단검사의학과·영상의학과·병리과·핵의학과·방사선종양학과·
+--         예방의학과·직업환경의학과·보건기관의과·구강병리과·영상치의학과, 12개)
 -- =====================================================================
--- UPDATE dept SET is_guide = 0
--- WHERE dept_nm IN ('일반의','응급의학과','진단검사의학과','영상의학과','병리과','핵의학과',
---                   '방사선종양학과','예방의학과','직업환경의학과','보건기관의과','구강병리과','영상치의학과');
