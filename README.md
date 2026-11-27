@@ -40,7 +40,7 @@ python app.py
 |---|---|
 | [`src/`](src/) | Flask 웹앱 소스 · [`app.py`](src/app.py), [`index.html`](src/templates/index.html), [`style.css`](src/static/style.css) |
 | [`설계/`](%EC%84%A4%EA%B3%84/) | 설계 자료와 ER 다이어그램 |
-| [`schema.sql`](src/schema.sql), [`load_data.py`](src/load_data.py), [`load_disease.py`](src/load_disease.py) | MySQL 스키마와 팀 데이터 적재 코드 |
+| [`load_data.py`](src/load_data.py), [`load_disease.py`](src/load_disease.py) | 팀 데이터 적재 코드 |
 | [`DB/`](DB/) | 설계에서 사용하는 원본 CSV 9개 (병원·약국정보, 상세정보 01 시설·02 세부·03 진료과목·05 의료장비·08 특수진료, 상병마스터, 진료과목별 상병 통계) |
 | [`설계/schema.sql`](%EC%84%A4%EA%B3%84/schema.sql) | 초기 설계 참고용 스키마 |
 | [`설계/ER_full.png`](%EC%84%A4%EA%B3%84/ER_full.png), [`설계/hira_ER_chen_full.drawio`](%EC%84%A4%EA%B3%84/hira_ER_chen_full.drawio) | ER 다이어그램 |
