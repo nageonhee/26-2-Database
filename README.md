@@ -14,7 +14,7 @@
 
 `hira_db`가 이미 준비되어 있으면 Flask 실행 단계로 넘어갑니다. 새로 구축하는 경우 프로젝트 루트에서 `cd src`로 이동한 뒤 MySQL 8.0의 빈 환경에서 아래 순서대로 실행합니다.
 
-1. [`schema.sql`](src/schema.sql)을 MySQL에서 실행해 테이블 16개와 뷰 1개를 생성합니다.
+1. [`schema.sql`](설계/schema.sql)을 MySQL에서 실행해 테이블 16개와 뷰 1개를 생성합니다.
 2. [`load_data.py`](src/load_data.py)에 `--dir ../DB`를 지정해 기본 테이블 12개를 적재합니다.
 3. [`load_disease.py`](src/load_disease.py)에 `--master`와 `--stat`으로 두 상병 CSV 파일을 지정해 질병 테이블 4개를 적재합니다.
 
